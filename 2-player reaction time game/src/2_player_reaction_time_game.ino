@@ -9,7 +9,7 @@
 #define BUTTON_P2 2
 
 struct Player {
-  int buttonPin;
+  int button;
   CRGB* led;
   unsigned long reactionTime;
   bool pressed;
@@ -32,15 +32,16 @@ Player players[2];
 
 GameState gameState = WAITING_FOR_START;
 unsigned long startTime;
+int falseStartPlayer = -1;
 
 void setup() {
   Serial.begin(9600);
   
-  players[0].buttonPin = BUTTON_P1;
+  players[0].button = BUTTON_P1;
   players[0].led = p1Led;
   players[0].pressed = false;
   
-  players[1].buttonPin = BUTTON_P2;
+  players[1].button = BUTTON_P2;
   players[1].led = p2Led;
   players[1].pressed = false;
   
@@ -78,28 +79,50 @@ void loop() {
       break;
       
     case WAITING_RANDOM:
-      players[0].led[0] = CRGB::Black;
-      players[1].led[0] = CRGB::Black;
-      FastLED.show();
-      
-      lcd.clear();
-      lcd.print("Get ready...");
-      
-      delay(random(250, 2001));
-      
-      players[0].led[0] = CRGB::Blue;
-      players[1].led[0] = CRGB::Blue;
-      FastLED.show();
-      
-      lcd.clear();
-      lcd.print("Press now!");
-      
-      players[0].pressed = false;
-      players[1].pressed = false;
-      players[0].reactionTime = 0;
-      players[1].reactionTime = 0;
-      startTime = millis();
-      gameState = REACTION_TEST;
+      {
+        players[0].led[0] = CRGB::Black;
+        players[1].led[0] = CRGB::Black;
+        FastLED.show();
+        
+        lcd.clear();
+        lcd.print("Get ready...");
+        
+        unsigned long waitStartTime = millis();
+        unsigned long waitDuration = random(250, 2000);
+        bool falseStart = false;
+        falseStartPlayer = -1;
+        while (millis() - waitStartTime < waitDuration && !falseStart) {
+          if (digitalRead(players[0].button) == LOW) {
+            falseStart = true;
+            falseStartPlayer = 0;
+            break;
+          }
+          else if (digitalRead(players[1].button) == LOW) {
+            falseStart = true;
+            falseStartPlayer = 1;
+            break;
+          }
+          delay(1);
+        }
+        
+        if (falseStart) {
+          gameState = SHOW_RESULTS;
+        } else {
+          players[0].led[0] = CRGB::Blue;
+          players[1].led[0] = CRGB::Blue;
+          FastLED.show();
+          
+          lcd.clear();
+          lcd.print("Press now!");
+          
+          players[0].pressed = false;
+          players[1].pressed = false;
+          players[0].reactionTime = 0;
+          players[1].reactionTime = 0;
+          startTime = millis();
+          gameState = REACTION_TEST;
+        }
+      }
       break;
       
     case REACTION_TEST:
@@ -119,17 +142,13 @@ void loop() {
         }
       }
       
-      if (players[0].pressed || players[1].pressed || (millis() - startTime > 3000)) {
+      if (players[0].pressed || players[1].pressed) {
         gameState = SHOW_RESULTS;
       }
       break;
     case SHOW_RESULTS:
       showResults();
-      delay(3000);
-      lcd.clear();
-      lcd.print("Press any button");
-      lcd.setCursor(0, 1);
-      lcd.print("to play again");
+      delay(1000);
       while (digitalRead(BUTTON_P1) == HIGH && digitalRead(BUTTON_P2) == HIGH) {
         delay(10);
       }
@@ -173,6 +192,17 @@ void runCountdown() {
 
 void showResults() {
   lcd.clear();
+  if (falseStartPlayer >= 0) {
+    lcd.print("Player " + String(falseStartPlayer + 1) + " made");
+    lcd.setCursor(0, 1);
+    lcd.print("a false start!");
+    
+    players[falseStartPlayer].led[0] = CRGB::Red;
+    players[1-falseStartPlayer].led[0] = CRGB::Green;
+    FastLED.show();
+    return;
+  }
+  
   if (players[0].pressed && players[1].pressed) {
     if (abs((int)(players[0].reactionTime - players[1].reactionTime)) <= 10) {
       lcd.print("It's a tie!");
@@ -210,13 +240,6 @@ void showResults() {
     
     players[0].led[0] = CRGB::Red;
     players[1].led[0] = CRGB::Green;
-  } else {
-    lcd.print("Time's up!");
-    lcd.setCursor(0, 1);
-    lcd.print("Try again");
-    
-    players[0].led[0] = CRGB::Red;
-    players[1].led[0] = CRGB::Red;
   }
   FastLED.show();
 }
